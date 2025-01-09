@@ -5,6 +5,8 @@ import androidx.lifecycle.LiveData
 import androidx.lifecycle.MutableLiveData
 import androidx.lifecycle.ViewModel
 import com.example.tictactoe.R
+import com.example.tictactoe.core.utils.Utils
+import kotlin.collections.indexOf
 
 data class PlayerDetails(var name: String, var avatar: Int, var score: Int, var isAI: Boolean)
 
@@ -36,10 +38,13 @@ class CoreViewModel : ViewModel() {
     val boardDimensions: LiveData<Int> = _boardDimensions
 
     private val _board =
-        MutableLiveData<MutableList<MutableList<String?>>>(MutableList(this._boardDimensions.value!!) {
+        MutableLiveData<List<MutableList<String?>>>(List(this._boardDimensions.value!!) {
             MutableList(this._boardDimensions.value!!) { null }
         })
-    val board: LiveData<MutableList<MutableList<String?>>> = _board;
+    val board: LiveData<List<MutableList<String?>>> = _board;
+
+    private val _winConditions = MutableLiveData<List<List<Pair<Int, Int>>>?>(null);
+    val winConditions: LiveData<List<List<Pair<Int, Int>>>?> = _winConditions;
 
     // If this isn't set & on board screen, user to be redirected to the settings screen
     private val _currentPlayer = MutableLiveData<String?>(null)
@@ -48,24 +53,184 @@ class CoreViewModel : ViewModel() {
     private val _winner = MutableLiveData<String?>(null)
     val winner: LiveData<String?> = _winner
 
-    // If this isn't set & on board screen, user to be redirected to the settings screen
+    private val _winningCells = MutableLiveData<List<String>>(emptyList<String>())
+    val winningCells: LiveData<List<String>> = _winningCells
+
+    // If this isn't set & user is on the board screen, user to be redirected to the settings screen
     private val _aiDifficulty = MutableLiveData<AIDifficulty>(AIDifficulty.EASY)
     val aiDifficulty: LiveData<AIDifficulty> = _aiDifficulty
 
-    // If this isn't set & on board screen, user to be redirected to the settings screen
+    // If this isn't set & user is on the board screen, user to be redirected to the settings screen
     private val _gameMode = MutableLiveData<GameModes?>(null)
     val gameMode: LiveData<GameModes?> = _gameMode
 
-    private fun getWinConditions() {
+    private val _noRoundsLeft = MutableLiveData<Int?>(null)
+    val noRoundsLeft: LiveData<Int?> = _noRoundsLeft
+
+    /**
+     * Generate or updates the initial board state
+     *
+     * This function create a mutable list composed of a mutable list of nullable strings, it looks something like this
+     *
+     * `[[null, "james", null], [null, "james", null]]`
+     * */
+    private fun generateBoard(size: Int): MutableList<MutableList<String?>> {
+        return MutableList(size) { MutableList(size) { null } }
     }
 
-    fun playPosition(): Unit {}
+    /**
+     * dynamically generates the win conditions using board size parameter, it looks something like this
+     *
+     * `[[(0, 0), (0, 1), (0, 2)], [(1, 0), (1, 1), (1, 2)]]`
+     *
+     * the first pair item is the row, the second is the column
+     * */
+    private fun generateWinConditions(size: Int): List<List<Pair<Int, Int>>> {
+        val winConditions = mutableListOf<List<Pair<Int, Int>>>()
 
-    fun checkWin(): Boolean {
-        return false;
+        // Add horizontal win conditions
+        for (row in 0 until size) {
+            val horizontal = mutableListOf<Pair<Int, Int>>()
+            for (col in 0 until size) {
+                horizontal.add(row to col)
+            }
+            winConditions.add(horizontal)
+        }
+
+        // Add vertical win conditions
+        for (col in 0 until size) {
+            val vertical = mutableListOf<Pair<Int, Int>>()
+            for (row in 0 until size) {
+                vertical.add(row to col)
+            }
+            winConditions.add(vertical)
+        }
+
+        // Add top-left to bottom-right diagonal win condition
+        val diagonal1 = mutableListOf<Pair<Int, Int>>()
+        for (i in 0 until size) {
+            diagonal1.add(i to i)
+        }
+        winConditions.add(diagonal1)
+
+        // Add top-right to bottom-left diagonal win condition
+        val diagonal2 = mutableListOf<Pair<Int, Int>>()
+        for (i in 0 until size) {
+            diagonal2.add(i to (size - 1 - i))
+        }
+        winConditions.add(diagonal2)
+
+        return winConditions
     }
 
-    fun resetBoardState(): Unit {}
+    /**
+     * Make a play in a certain position
+     *
+     * Insert `PlayerDetails.name` in specified column in row
+     * */
+    fun makePlayInPosition(row: Int, col: Int) {
+
+        // ensure cell is empty and game is still on going
+        if (_board.value!![row][col] != null || _winner.value != null) return
+
+        // make play
+        val newBoard = _board.value!!.map { it.toMutableList() }
+        newBoard[row][col] = _currentPlayer.value!!
+        _board.value = newBoard
+
+        // TOD0: remove commenter
+        Utils.printDebugger("New Board", _board.value!!)
+
+        // check for a winner
+        val (isWin, cells) = checkWin(
+            _board.value!!,
+            _winConditions.value!!,
+            _currentPlayer.value!!
+        )
+        if (isWin) {
+            // if theres a winner update the winner state
+            _winner.value = _currentPlayer.value
+            _winningCells.value = cells
+            // update the score of the winner
+            updatePlayerScore(_currentPlayer.value!!)
+            // increase round count, if game mode is not FREE_FOR_ALL
+            updateRoundCount()
+        }
+        // check for draw
+        else if (checkDraw(_board.value!!)) {
+            _winningCells.value = emptyList()
+            // if its a draw update the score of all players
+            updateAllPlayersScore()
+            // increase round count, if game mode is not FREE_FOR_ALL
+            updateRoundCount()
+        } else {
+            // else change current player
+            _currentPlayer.value = getNextPlayer(_currentPlayer.value!!).name
+            _winningCells.value = emptyList()
+
+        }
+    }
+
+    /**
+     * Get the next player from the array of players
+     *
+     * Used in changing player turns if win check fails
+     *  */
+    private fun getNextPlayer(curPlyr: String): PlayerDetails {
+        val current = _players.value?.find { it.name == curPlyr };
+        val idx = _players.value!!.indexOf(current)
+        return if ((idx + 1) >= _players.value!!.size) _players.value!![0] else _players.value!![idx + 1]
+    }
+
+    /**
+     * Checks for a winner, provided board state, win conditions and player
+     * */
+    fun checkWin(
+        boardState: List<MutableList<String?>>,
+        winCond: List<List<Pair<Int, Int>>>,
+        plyr: String
+    ): Pair<Boolean, List<String>> {
+        for (conditions in winCond) {
+            if (conditions.all { (row, column) -> boardState[row][column] == plyr }) return Pair(
+                true,
+                conditions.map { it -> "${it.second}|${it.first}" })
+        }
+        return Pair(false, emptyList());
+    }
+
+    /**
+     * Checks for a draw
+     * */
+    fun checkDraw(boardState: List<MutableList<String?>>): Boolean {
+        return boardState.flatten().all { it != null }
+    }
+
+    /**
+     * reset board state, winner state and winning cells tracker to default values
+     * */
+    fun resetBoardState() {
+        _board.value = generateBoard(_boardDimensions.value!!)
+        _winningCells.value = emptyList()
+        _winner.value = null
+    }
+
+    /**
+     * conditionally update round count using game mode
+     * */
+    fun updateRoundCount() {
+        _gameMode.value?.let {
+            when (it) {
+                GameModes.ROUND_OF_NINE -> if (_noRoundsLeft.value!! < 9) _noRoundsLeft.value =
+                    _noRoundsLeft.value?.plus(1)
+
+                GameModes.ROUND_OF_THREE -> if (_noRoundsLeft.value!! < 3) _noRoundsLeft.value =
+                    _noRoundsLeft.value?.plus(1)
+
+                GameModes.FREE_FOR_ALL -> {}
+            }
+        }
+
+    }
 
     /**
      * Updates player name using `playerIndex` to get player object
@@ -78,20 +243,38 @@ class CoreViewModel : ViewModel() {
     }
 
     /**
+     * Update player score using `plyrName`
+     * */
+    fun updatePlayerScore(plyrName: String) {
+        _players.value = _players.value?.map {
+            if (it.name == plyrName) it.copy(score = it.score + 1) else it
+        }?.toMutableList()
+    }
+
+    /**
+     * Update the scores of all players
+     * */
+    fun updateAllPlayersScore() {
+        _players.value = _players.value?.map {
+            it.copy(score = it.score + 1)
+        }?.toMutableList()
+    }
+
+    /**
      * Selects a random unique name and assigns it to a player
      * */
     fun setRandomName(plyrIndex: Int) {
         val names = listOf<String>(
-            "Alex",
-            "Jordan",
-            "Taylor",
-            "Casey",
-            "Morgan",
-            "Jamie",
-            "Riley",
-            "Cameron",
-            "Avery",
-            "Quinn"
+            "alex",
+            "jordan",
+            "taylor",
+            "casey",
+            "morgan",
+            "jamie",
+            "riley",
+            "cameron",
+            "avery",
+            "quinn"
         )
         // if _players.value is null, skip the filtering to avoid name duplication and just select any random name
         val randName = _players.value?.let {
@@ -138,17 +321,113 @@ class CoreViewModel : ViewModel() {
                 // ensuring 3 is the lowest board dimension
             } else if (action == DimensionAction.DECREMENT && it > 3) {
                 _boardDimensions.value?.minus(1);
-                // create an effect making it appear as you are cycling through number from 3-12
+                // by returning 3 an effect making it appear as you are cycling through numbers from 3-12 is created
             } else {
                 3
             }
         }
     }
 
+    /***
+     * checking if players have the same name
+     */
+    private fun namesEqual(names: List<String>): Boolean {
+        var n1 = names[0];
+        for (name in names) {
+            if (n1 != name) {
+                return false
+            }
+        }
+        return true
+    }
+
     /**
-     * Validates all inputs and redirects to the game board using the set game configurations
+     * Validates all inputs and triggers a redirect to the game board using the set game configurations
      * */
-    fun startGame() {
-        TODO("Start Game Validation")
+    fun startGame(): Boolean {
+        val plyrNames = _players.value?.let {
+            // make player names lowercase
+            it.map { plyr -> plyr.name.lowercase() }
+        } ?: emptyList()
+        if (plyrNames.isEmpty()) {
+            _errorMsg.value = "Player names are required"
+            // prevent further execution
+            return false;
+        }
+        // Ensure no empty string as names
+        if (plyrNames.any { it == "" }) {
+            _errorMsg.value = "All player names are required"
+            // prevent further execution
+            return false;
+        }
+        // Ensure no names are same
+        if (namesEqual(plyrNames)) {
+            _errorMsg.value = "Player names must not be the same"
+            // prevent further execution
+            return false;
+        }
+        // Ensure a game mode is set
+        if (_gameMode.value == null) {
+            _errorMsg.value = "A game mode must be selected"
+            // prevent further execution
+            return false;
+        }
+
+        // current player to the first element in the player names list
+        _currentPlayer.value = plyrNames[0]
+
+        // update the initial board state to create before game start
+        this._boardDimensions.value?.let {
+            _board.value = generateBoard(it)
+            _winConditions.value = generateWinConditions(it)
+        } ?: run {
+            _errorMsg.value = "Board dimensions are required"
+            // this return is pointing to the `startGame` function not the lambda
+            return false;
+        }
+
+        _gameMode.value.let {
+            if (it == GameModes.FREE_FOR_ALL) {
+                _noRoundsLeft.value = null
+            } else {
+                _noRoundsLeft.value = 0
+
+            }
+        }
+
+//        print("winConditions:   ")
+//        println(_winConditions.value)
+//        print("board:   ")
+//        println(_board.value)
+//        print("_currentPlayer:  ")
+//        println(_currentPlayer.value)
+
+        return true;
+    }
+
+    /**
+     * Check if all requirements for game to run properly are set
+     * */
+    fun isGameReadyToPlay(): Boolean {
+        val plyrNames = _players.value?.let {
+            it.map { plyr -> plyr.name }
+        } ?: emptyList()
+
+        // Player details are required
+        if (plyrNames.isEmpty()) {
+            // prevent further execution
+            return false;
+        }
+        if (_winConditions.value == null) {
+            return false
+        }
+        if (_currentPlayer.value == null) {
+            return false
+        }
+        if (_gameMode.value == null) {
+            return false
+        }
+
+        return true
     }
 }

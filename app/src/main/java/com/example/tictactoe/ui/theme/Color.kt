@@ -11,3 +11,4 @@ val PurpleGrey40 = Color(0xFF625b71)
 val Pink40 = Color(0xFF7D5260)
 
 val Slate20 = Color(0xffe2e8f0)
+val Green40 = Color(0xffa5f3fc)

@@ -1,6 +1,13 @@
 package com.example.tictactoe.board.presentation
 
 import android.util.Log
+import android.widget.Toast
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -11,6 +18,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -22,18 +30,27 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Divider
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.VerticalDivider
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.livedata.observeAsState
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 // dependencies to make remember/observeAsState work
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.livedata.observeAsState
 // dependencies to make remember/observeAsState work
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
@@ -54,52 +71,171 @@ import androidx.navigation.NavController
 import com.example.tictactoe.core.domain.CoreViewModel
 import com.example.tictactoe.R
 import com.example.tictactoe.core.domain.GameModes
+import com.example.tictactoe.core.domain.PlayerDetails
+import com.example.tictactoe.core.navigation.NavRoutes
+import com.example.tictactoe.core.utils.Utils
+import com.example.tictactoe.ui.theme.Green40
 import com.example.tictactoe.ui.theme.Slate20
 
 
 @Composable
 fun BoardScreen(navController: NavController, coreViewModel: CoreViewModel) {
-    val players by coreViewModel.players.observeAsState()
-    val localCtx = LocalContext.current;
+    val isGameReadyToPlay = coreViewModel.isGameReadyToPlay()
     val scrollState = rememberScrollState()
+    // observe livedata and delegate values to variables,
+    // also specifying default to protect against nullables which could cause exceptions
+    val players by coreViewModel.players.observeAsState(emptyList());
+    val boardDimension by coreViewModel.boardDimensions.observeAsState(3);
+    val board by coreViewModel.board.observeAsState(emptyList());
+    val currentPlayer by coreViewModel.currentPlayer.observeAsState("");
+    val gameMode by coreViewModel.gameMode.observeAsState(GameModes.ROUND_OF_THREE)
+    val noRoundsLeft by coreViewModel.noRoundsLeft.observeAsState(0)
+    val winner by coreViewModel.winner.observeAsState("")
+    val winningCells by coreViewModel.winningCells.observeAsState(emptyList())
+
+    coreViewModel.winningCells.observeAsState().value?.let {
+        Utils.printDebugger("winningCells", it)
+    }
+
+    val localCtx = LocalContext.current;
 
     /**
-     * Navigate to the settings page if the player details are not available
+     * Navigate to the settings page if game requirements are not set
      *
-     * Uses compose side-effects
-     *
-     * [Side effects](https://developer.android.com/develop/ui/compose/side-effects)
+     * [Uses compose side-effects](https://developer.android.com/develop/ui/compose/side-effects)
      */
-//    LaunchedEffect(players.value) {
-//        if (players.value.isNullOrEmpty()) {
-//            Toast.makeText(
-//                localCtx,
-//                "Player are required to start the game",
-//                Toast.LENGTH_LONG
-//            ).show()
-//            navController.navigate(NavRoutes.Settings)
-//        }
-//    }
-
-    Log.i("BoardScreen", "$players")
-
+    LaunchedEffect(isGameReadyToPlay) {
+        if (!isGameReadyToPlay) {
+            Toast.makeText(
+                localCtx,
+                "Game settings are required",
+                Toast.LENGTH_LONG
+            ).show()
+            navController.navigate(NavRoutes.Settings)
+        }
+    }
 
     Surface(
         modifier = Modifier
             .fillMaxSize()
     ) {
-        MainComposable()
+        Column(
+            modifier = Modifier
+                .verticalScroll(scrollState)
+                .padding(10.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                players.let {
+                    if (it.size >= 2) {
+                        val (plyr1, plyr2) = it
+                        PlayerScoreBoard(
+                            plyr1.avatar,
+                            plyr1.name,
+                            plyr1.score,
+                            plyr1.isAI,
+                            currentPlayer == plyr1.name
+                        )
+                        RoundTracker(gameMode!!, noRoundsLeft!!)
+                        PlayerScoreBoard(
+                            plyr2.avatar,
+                            plyr2.name,
+                            plyr2.score,
+                            plyr2.isAI,
+                            currentPlayer == plyr2.name
+                        )
+                    }
+                }
+
+            }
+
+            Spacer(modifier = Modifier.height(40.dp))
+
+            ActualBoard(
+                players = players,
+                boardDimension = boardDimension,
+                flattenedBoard = board.flatten(),
+                // `::` callable reference or class reference
+                makePlay = coreViewModel::makePlayInPosition,
+                winningCells = winningCells,
+            )
+
+            Spacer(modifier = Modifier.height(40.dp))
+            Box(
+                modifier = Modifier
+                    .border(
+                        2.dp,
+                        color = MaterialTheme.colorScheme.primary,
+                        RoundedCornerShape(5.dp)
+                    )
+                    .defaultMinSize(
+                        minWidth = ButtonDefaults.MinWidth,
+                        minHeight = ButtonDefaults.MinHeight
+                    )
+                    .padding(ButtonDefaults.ContentPadding)
+            ) {
+                val displayText =
+                    if (winner != null) "${winner!!.replaceFirstChar { it.uppercase() }} Won" else if (coreViewModel.checkDraw(
+                            board
+                        )
+                    ) "It's a draw" else "${currentPlayer!!.replaceFirstChar { it.uppercase() }}'s Turn"
+                Text(
+                    displayText,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.width(150.dp),
+                    fontWeight = FontWeight.Bold,
+                    overflow = TextOverflow.Ellipsis,
+                    maxLines = 1
+                )
+            }
+            // if its a draw or there's a winner
+            if(coreViewModel.checkDraw(board) || winner != null) {
+                Button(
+                    shape = RoundedCornerShape(5.dp),
+                    onClick = { coreViewModel.resetBoardState() }) {
+                    Text(
+                        when (gameMode) {
+                            GameModes.FREE_FOR_ALL -> "Play Again"
+                            else -> "Next Round"
+                        },
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.width(150.dp),
+                        fontWeight = FontWeight.Bold,
+                        overflow = TextOverflow.Ellipsis,
+                        maxLines = 1
+                    )
+                }
+            }
+
+        }
     }
 }
 
 @Composable
-fun PlayerScoreBoard(imageResourceId: Int, playerName: String, score: Int) {
+fun PlayerScoreBoard(
+    imageResourceId: Int,
+    playerName: String,
+    score: Int,
+    isAI: Boolean,
+    currentPlyr: Boolean
+) {
     val imagePainter: Painter = painterResource(imageResourceId)
     Column(
         modifier = Modifier
             .width(150.dp)
             .shadow(elevation = 10.dp, shape = RoundedCornerShape(20.dp), clip = false)
             .background(Color.White)
+            .then(
+                if (currentPlyr) {
+                    Modifier.border(2.dp, color = Color.Black, shape = RoundedCornerShape(20.dp))
+                } else {
+                    Modifier
+                }
+            )
             .padding(8.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
@@ -130,7 +266,23 @@ fun PlayerScoreBoard(imageResourceId: Int, playerName: String, score: Int) {
             maxLines = 1
         )
         Spacer(modifier = Modifier.height(2.dp))
-        Row(verticalAlignment = Alignment.CenterVertically) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.Center,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            if (isAI) {
+                Text("AI")
+                VerticalDivider(
+                    modifier = Modifier
+                        .padding(
+                            vertical = 12.dp,
+                            horizontal = 8.dp,
+                        )
+                        .height(14.dp),
+                    thickness = 2.dp
+                )
+            }
             Text("Score: ", fontSize = 12.sp)
             Text(score.toString(), fontWeight = FontWeight.SemiBold, fontSize = 18.sp)
         }
@@ -166,13 +318,28 @@ fun RoundTracker(gameType: GameModes, roundsLeft: Int) {
 }
 
 @Composable
-fun BoardCell(cellItem: String) {
+fun BoardCell(
+    player: PlayerDetails?,
+    column: Int,
+    row: Int,
+    boardDimension: Int,
+    inWinningCell: Boolean,
+    makePlayHandler: (Int, Int) -> Unit
+) {
+
     Box(modifier = Modifier
         .fillMaxSize()
         .aspectRatio(1f)
-        .background(Slate20)
+        .then(
+            if (inWinningCell) {
+                Modifier.background(Green40)
+            } else {
+                Modifier.background(Slate20)
+            }
+        )
         .clickable {
-            Log.i("BoardCellBtn", "Board Item: $cellItem was clicked")
+            Log.i("BoardCellBtn", "column: $column | row: $row")
+            makePlayHandler.invoke(row, column)
         }
         .drawBehind {
             drawLine(
@@ -197,12 +364,37 @@ fun BoardCell(cellItem: String) {
         .padding(10.dp),
         contentAlignment = Alignment.Center
     ) {
-        Text(cellItem)
+        val animDuration = 500
+        Column {
+            AnimatedVisibility(
+                // hide the component if player is null
+                visible = player != null,
+                enter = scaleIn(tween(animDuration)) + fadeIn(
+                    tween(animDuration)
+                ),
+                exit = scaleOut(tween(animDuration)) + fadeOut(
+                    tween(animDuration)
+                )
+            ) {
+                val paintRes = painterResource(id = player?.avatar ?: R.drawable.nothing)
+                Image(
+                    painter = paintRes,
+                    contentDescription = null,
+                    modifier = Modifier.size(if (boardDimension >= 7) 20.dp else 30.dp),
+                )
+            }
+        }
     }
 }
 
 @Composable
-fun ActualBoard() {
+fun ActualBoard(
+    players: List<PlayerDetails>,
+    boardDimension: Int,
+    flattenedBoard: List<String?>,
+    winningCells: List<String>,
+    makePlay: (Int, Int) -> Unit
+) {
     Box(
         modifier = Modifier
             .size(300.dp)
@@ -229,69 +421,23 @@ fun ActualBoard() {
                 .size(300.dp)
                 .clip(RoundedCornerShape(14.dp))
                 .background(Color.Gray),
-            columns = GridCells.Fixed(4)
+            columns = GridCells.Fixed(boardDimension)
         ) {
-            val randomItems = List(3 * 4) { "Dog" }
-            itemsIndexed(randomItems) { index, item ->
-                BoardCell((index + 1).toString())
+            itemsIndexed(flattenedBoard) { index, item ->
+                // Calculate row and column
+                val row = index / boardDimension
+                val column = index % boardDimension
+                val player = players.find { it.name === item }
+                BoardCell(
+                    player = player,
+                    column = column,
+                    row = row,
+                    boardDimension = boardDimension,
+                    inWinningCell = winningCells.contains("$column|$row"),
+                    makePlayHandler = makePlay
+                )
             }
         }
     }
 
-}
-
-@Composable
-fun MainComposable() {
-    Column(modifier = Modifier.padding(10.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            PlayerScoreBoard(
-                R.drawable.madara,
-                "Player 1 Here's some extra information too long he he he",
-                30
-            )
-            RoundTracker(GameModes.ROUND_OF_THREE, 1)
-            PlayerScoreBoard(
-                R.drawable.sasuke,
-                "Player 1 Here's some extra information too long he he he",
-                30
-            )
-        }
-
-        Spacer(modifier = Modifier.height(40.dp))
-
-        ActualBoard()
-
-        Spacer(modifier = Modifier.height(40.dp))
-        Button(shape = RoundedCornerShape(5.dp), onClick = {}) {
-            Text(
-                "Player 1 Turn",
-                textAlign = TextAlign.Center,
-                modifier = Modifier.width(150.dp),
-                fontWeight = FontWeight.Bold,
-                overflow = TextOverflow.Ellipsis,
-                maxLines = 1
-            )
-        }
-        Button(shape = RoundedCornerShape(5.dp), onClick = {}) {
-            Text(
-                "Next Round ",
-                textAlign = TextAlign.Center,
-                modifier = Modifier.width(150.dp),
-                fontWeight = FontWeight.Bold,
-                overflow = TextOverflow.Ellipsis,
-                maxLines = 1
-            )
-        }
-
-    }
-}
-
-@Preview(showBackground = true)
-@Composable
-fun DefaultPreview() {
-    MainComposable()
 }

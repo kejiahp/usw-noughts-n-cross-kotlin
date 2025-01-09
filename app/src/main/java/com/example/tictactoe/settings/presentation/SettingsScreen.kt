@@ -31,6 +31,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextField
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 // dependencies to make remember/observeAsState work
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.livedata.observeAsState
@@ -53,6 +54,7 @@ import com.example.tictactoe.core.domain.AIDifficulty
 import com.example.tictactoe.core.domain.CoreViewModel
 import com.example.tictactoe.core.domain.DimensionAction
 import com.example.tictactoe.core.domain.GameModes
+import com.example.tictactoe.core.navigation.NavRoutes
 import com.example.tictactoe.ui.theme.Slate20
 
 @Composable
@@ -62,9 +64,12 @@ fun SettingsScreen(navController: NavController, coreViewModel: CoreViewModel) {
     val gameMode = coreViewModel.gameMode.observeAsState()
     val aiDifficulty by coreViewModel.aiDifficulty.observeAsState()
     val boardDimension by coreViewModel.boardDimensions.observeAsState()
-    val errorMsg by coreViewModel.errorMsg.observeAsState()
 
-    gameMode.value.let { Log.i("SettingsScreen", "game mode changed: $gameMode") }
+    // this shows a toast whenever errorMsg changes and the value is not null
+    coreViewModel.errorMsg.observeAsState().value?.let {
+        Toast.makeText(LocalContext.current, it, Toast.LENGTH_LONG).show()
+    }
+
 
     Surface(
         modifier = Modifier
@@ -72,10 +77,11 @@ fun SettingsScreen(navController: NavController, coreViewModel: CoreViewModel) {
     ) {
         Column(
             modifier = Modifier
-                .padding(10.dp)
                 .verticalScroll(scrollState)
+                .padding(10.dp)
         ) {
             Button(onClick = {
+                navController.navigate(NavRoutes.Board)
             }) {
                 Text("Go to Second Screen")
             }
@@ -88,6 +94,8 @@ fun SettingsScreen(navController: NavController, coreViewModel: CoreViewModel) {
                     players.forEachIndexed { idx, plyr ->
                         PlayerProfile(
                             imageResourceId = plyr.avatar,
+                            // hide make AI radio, the first player must always be human
+                            showAIRadio = idx != 0,
                             name = plyr.name,
                             isAI = plyr.isAI,
                             makeAI = { coreViewModel.makeAI(idx) },
@@ -132,7 +140,13 @@ fun SettingsScreen(navController: NavController, coreViewModel: CoreViewModel) {
                 Button(
                     modifier = Modifier.size(width = 200.dp, height = 50.dp),
                     shape = RoundedCornerShape(5.dp),
-                    onClick = { Log.i("SettingsScreen", "game validation") }) {
+                    onClick = {
+                        // check if the board configurations are set, if so navigate to the actual board
+                        val isGameValid =
+                            coreViewModel.startGame(); if (isGameValid) navController.navigate(
+                        NavRoutes.Board
+                    ) else return@Button
+                    }) {
                     Text("START", fontWeight = FontWeight.Bold, fontSize = 16.sp)
                 }
 
@@ -145,6 +159,7 @@ fun SettingsScreen(navController: NavController, coreViewModel: CoreViewModel) {
 @Composable
 fun PlayerProfile(
     imageResourceId: Int,
+    showAIRadio: Boolean,
     name: String,
     isAI: Boolean,
     makeAI: () -> Unit,
@@ -195,7 +210,7 @@ fun PlayerProfile(
                         // prevent further input of text
                         return@TextField
                     }
-                    onNameChangeHandler(it)
+                    onNameChangeHandler(it.lowercase())
                 },
                 label = { Text("Enter text") },
                 singleLine = true,
@@ -208,12 +223,15 @@ fun PlayerProfile(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    RadioButton(
-                        selected = isAI,
-                        // invoke the lambda
-                        onClick = { makeAI.invoke() }
-                    )
-                    Text("Make AI?")
+                    if (showAIRadio) {
+                        RadioButton(
+                            selected = isAI,
+                            // invoke the lambda
+                            onClick = { makeAI.invoke() }
+                        )
+                        Text("Make AI?")
+                    }
+                    Spacer(modifier = Modifier.width(10.dp))
                 }
 
                 Button(
