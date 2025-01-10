@@ -39,7 +39,7 @@ fun BoardSizeSetter(boardSize: String, onDimensionChangeHandler: (DimensionActio
         }, shape = RoundedCornerShape(5.dp)) {
             Icon(
                 imageVector = Icons.Default.KeyboardArrowDown,
-                contentDescription = "Increase board dimension",
+                contentDescription = "Decrease board dimension",
                 tint = Color.Unspecified
             )
         }

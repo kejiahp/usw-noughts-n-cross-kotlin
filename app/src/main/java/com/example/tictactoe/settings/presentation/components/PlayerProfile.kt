@@ -78,12 +78,13 @@ fun PlayerProfile(
                 value = name,
                 onValueChange = { it ->
                     if (it.length >= 20) {
+                        // Display toast when username hit the max character limit
                         Toast.makeText(
                             toastCtx,
                             "Input exceeds $maxLength characters!",
                             Toast.LENGTH_LONG
                         ).show()
-                        // prevent further input of text
+                        // prevent further input of text, this a labelled return as kotlin by default returns to the nearest `fun` declaration
                         return@TextField
                     }
                     onNameChangeHandler(it.lowercase())
