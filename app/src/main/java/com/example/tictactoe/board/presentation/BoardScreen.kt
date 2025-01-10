@@ -50,7 +50,6 @@ import com.example.tictactoe.R
 import com.example.tictactoe.board.presentation.components.ActualBoard
 import com.example.tictactoe.core.domain.GameModes
 import com.example.tictactoe.core.navigation.NavRoutes
-import com.example.tictactoe.core.utils.Utils
 import com.example.tictactoe.board.presentation.components.GameAlertDialog
 import com.example.tictactoe.board.presentation.components.PlayerScoreBoard
 import com.example.tictactoe.board.presentation.components.RoundTracker
@@ -115,11 +114,6 @@ fun BoardScreen(navController: NavController, coreViewModel: CoreViewModel) {
             0,       // Loop (0 for no loop)
             1f       // Playback rate (1f is normal speed)
         )
-    }
-
-    // TODO: remove this
-    coreViewModel.winningCells.observeAsState().value?.let {
-        Utils.printDebugger("winningCells", it)
     }
 
 

@@ -14,3 +14,9 @@ Technologies Used:
 
 Features Implemented
 - Game customization menu
+  - Player name customization (option to play against AI)
+  - Board dimensions customization
+  - Game mode customization
+  - AI difficulty customization
+- Custom Board Sound
+- Heuristics Based AI

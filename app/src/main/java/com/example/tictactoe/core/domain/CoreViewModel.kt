@@ -4,7 +4,6 @@ import androidx.lifecycle.LiveData
 import androidx.lifecycle.MutableLiveData
 import androidx.lifecycle.ViewModel
 import com.example.tictactoe.R
-import com.example.tictactoe.core.utils.Utils
 import kotlin.collections.indexOf
 
 data class PlayerDetails(var name: String, var avatar: Int, var score: Int, var isAI: Boolean)
@@ -156,8 +155,6 @@ class CoreViewModel : ViewModel() {
         newBoard[row][col] = _currentPlayer.value!!
         _board.value = newBoard
 
-        // TOD0: remove commenter
-        Utils.printDebugger("New Board", _board.value!!)
 
         // check for a winner
         val (isWin, cells) = checkWin(
@@ -219,25 +216,20 @@ class CoreViewModel : ViewModel() {
                     _board.value!!,
                     _boardDimensions.value!!
                 )
-                Utils.printDebugger("cornerPlyPos", cornerPlyPos)
 
                 // check board middle
                 val (isMiddle, middlePlyPos) = isMiddlePlayPossible(
                     _board.value!!,
                     _boardDimensions.value!!
                 )
-                Utils.printDebugger("middlePlyPos", middlePlyPos)
 
                 // check for winning plays.
                 // This involves a lot of iterations to save compute, I skipped this check if there are less than two plays made
                 val groupResult = board.value!!.flatten().groupingBy { it != null }.eachCount() // returns a map that looks something like this `{false=3, true=5}`
                 val noOfPlaysMade = groupResult[true] ?: 2
-                Utils.printDebugger("groupResult", groupResult)
 
                 val (isWin, winPlyPos) = if (noOfPlaysMade >= 2) isWinningPlayPossible(_players.value!!.map { it.name }
                     .toMutableList(), _winConditions.value!!, _board.value!!) else Pair(false, null)
-
-                Utils.printDebugger("winPlyPos", winPlyPos)
 
                 // make play based on heuristics
                 if (isWin && winPlyPos != null) {
@@ -331,15 +323,6 @@ class CoreViewModel : ViewModel() {
                     }
                 }
             }}
-//        } ?: run {
-//            _currentPlayer.value?.let {currPlyr ->
-//                if (checkDraw(_board.value!!)) {
-//                val plyr = _players.value!!.find { plyr -> plyr.name == currPlyr}
-//                    _currentPlayer.value =  _players.value!![0].name
-//                }
-//            }
-//
-//        }
         _winner.value = null
     }
 
