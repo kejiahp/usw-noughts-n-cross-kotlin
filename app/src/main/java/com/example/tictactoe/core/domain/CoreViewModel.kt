@@ -1,6 +1,5 @@
 package com.example.tictactoe.core.domain
 
-import android.util.Log
 import androidx.lifecycle.LiveData
 import androidx.lifecycle.MutableLiveData
 import androidx.lifecycle.ViewModel
@@ -23,9 +22,19 @@ enum class AIDifficulty {
 }
 
 class CoreViewModel : ViewModel() {
+    /**Tracks error messages*/
     private val _errorMsg = MutableLiveData<String?>(null)
     val errorMsg: LiveData<String?> = _errorMsg
 
+    /**Controls the opening and closing of dialog the Game Over Dialog*/
+    private val _showGameOverDialog = MutableLiveData<Boolean>(false)
+    val showGameOverDialog: LiveData<Boolean> = _showGameOverDialog
+
+    /**Controls the opening and closing of dialog the Game Menu Dialog*/
+    private val _showGameMenuDialog = MutableLiveData<Boolean>(false)
+    val showGameMenuDialog: LiveData<Boolean> = _showGameMenuDialog
+
+    /**Tracks player data e.g. score, name, is player AI?, avatar*/
     private val _players = MutableLiveData<MutableList<PlayerDetails>>(
         mutableListOf<PlayerDetails>(
             PlayerDetails(name = "", avatar = R.drawable.sasuke, score = 0, isAI = false),
@@ -34,36 +43,45 @@ class CoreViewModel : ViewModel() {
     )
     val players: LiveData<MutableList<PlayerDetails>> = _players
 
+    /**Tracks the board dimensions e.g. 3X3, 4X4, 5X5*/
     private val _boardDimensions = MutableLiveData<Int>(3)
     val boardDimensions: LiveData<Int> = _boardDimensions
 
+    /**Tracks the actual board state*/
     private val _board =
         MutableLiveData<List<MutableList<String?>>>(List(this._boardDimensions.value!!) {
             MutableList(this._boardDimensions.value!!) { null }
         })
     val board: LiveData<List<MutableList<String?>>> = _board;
 
+    /**Track the win conditions, dynamically created using `generateWinConditions`*/
     private val _winConditions = MutableLiveData<List<List<Pair<Int, Int>>>?>(null);
-    val winConditions: LiveData<List<List<Pair<Int, Int>>>?> = _winConditions;
 
     // If this isn't set & on board screen, user to be redirected to the settings screen
+    /**Track the current player*/
     private val _currentPlayer = MutableLiveData<String?>(null)
     val currentPlayer: LiveData<String?> = _currentPlayer
 
+    /**Track the winner*/
     private val _winner = MutableLiveData<String?>(null)
     val winner: LiveData<String?> = _winner
 
+    /**Track the cell combination that created a winning play*/
     private val _winningCells = MutableLiveData<List<String>>(emptyList<String>())
     val winningCells: LiveData<List<String>> = _winningCells
 
     // If this isn't set & user is on the board screen, user to be redirected to the settings screen
+    /**Track the AI difficulty (`AIDifficulty`)*/
     private val _aiDifficulty = MutableLiveData<AIDifficulty>(AIDifficulty.EASY)
     val aiDifficulty: LiveData<AIDifficulty> = _aiDifficulty
 
+
     // If this isn't set & user is on the board screen, user to be redirected to the settings screen
+    /**Track the game mode (`GameModes`) being played*/
     private val _gameMode = MutableLiveData<GameModes?>(null)
     val gameMode: LiveData<GameModes?> = _gameMode
 
+    /**Track the number of rounds left based on the `_gameMode`*/
     private val _noRoundsLeft = MutableLiveData<Int?>(null)
     val noRoundsLeft: LiveData<Int?> = _noRoundsLeft
 
@@ -126,7 +144,7 @@ class CoreViewModel : ViewModel() {
     /**
      * Make a play in a certain position
      *
-     * Insert `PlayerDetails.name` in specified column in row
+     * Insert `PlayerDetails.name` in specified column within row updating the board state
      * */
     fun makePlayInPosition(row: Int, col: Int) {
 
@@ -155,6 +173,8 @@ class CoreViewModel : ViewModel() {
             updatePlayerScore(_currentPlayer.value!!)
             // increase round count, if game mode is not FREE_FOR_ALL
             updateRoundCount()
+            // display game over modal or not
+            displayGameOverModal()
         }
         // check for draw
         else if (checkDraw(_board.value!!)) {
@@ -163,12 +183,92 @@ class CoreViewModel : ViewModel() {
             updateAllPlayersScore()
             // increase round count, if game mode is not FREE_FOR_ALL
             updateRoundCount()
+            // display game over modal or not
+            displayGameOverModal()
         } else {
+            val nextPlayer = getNextPlayer(_currentPlayer.value!!)
             // else change current player
-            _currentPlayer.value = getNextPlayer(_currentPlayer.value!!).name
+            _currentPlayer.value = nextPlayer.name
             _winningCells.value = emptyList()
 
+            // If next player is AI, Make AI play using selected AI difficulty
+            if (nextPlayer.isAI) {
+                aiMakePlayInPosition(
+                    _aiDifficulty.value!!,
+                    _board.value!!
+                )
+            }
         }
+    }
+
+    fun aiMakePlayInPosition(
+        difficulty: AIDifficulty,
+        boardState: List<MutableList<String?>>,
+    ) {
+        when (difficulty) {
+            // random plays
+            AIDifficulty.EASY -> {
+                val freeSpace = getRandomEmptyCell(boardState)
+                makePlayInPosition(freeSpace.first, freeSpace.second)
+            }
+
+            // heuristics based plays
+            AIDifficulty.HARD -> {
+                // check board corners
+                val (isCorner, cornerPlyPos) = isCornerPlayPossible(
+                    _board.value!!,
+                    _boardDimensions.value!!
+                )
+                Utils.printDebugger("cornerPlyPos", cornerPlyPos)
+
+                // check board middle
+                val (isMiddle, middlePlyPos) = isMiddlePlayPossible(
+                    _board.value!!,
+                    _boardDimensions.value!!
+                )
+                Utils.printDebugger("middlePlyPos", middlePlyPos)
+
+                // check for winning plays.
+                // This involves a lot of iterations to save compute, I skipped this check if there are less than two plays made
+                val groupResult = board.value!!.flatten().groupingBy { it != null }.eachCount() // returns a map that looks something like this `{false=3, true=5}`
+                val noOfPlaysMade = groupResult[true] ?: 2
+                Utils.printDebugger("groupResult", groupResult)
+
+                val (isWin, winPlyPos) = if (noOfPlaysMade >= 2) isWinningPlayPossible(_players.value!!.map { it.name }
+                    .toMutableList(), _winConditions.value!!, _board.value!!) else Pair(false, null)
+
+                Utils.printDebugger("winPlyPos", winPlyPos)
+
+                // make play based on heuristics
+                if (isWin && winPlyPos != null) {
+                    makePlayInPosition(winPlyPos.first, winPlyPos.second)
+                } else if (isMiddle && middlePlyPos != null) {
+                    makePlayInPosition(middlePlyPos.first, middlePlyPos.second)
+                } else if (isCorner && cornerPlyPos != null) {
+                    makePlayInPosition(cornerPlyPos.first, cornerPlyPos.second)
+                } else {
+                    val freeSpace = getRandomEmptyCell(boardState)
+                    makePlayInPosition(freeSpace.first, freeSpace.second)
+                }
+            }
+        }
+    }
+
+    /**
+     * Get a random empty cell from the board
+     */
+    private fun getRandomEmptyCell(boardState: List<MutableList<String?>>): Pair<Int, Int> {
+        val emptyCellList = mutableListOf<Pair<Int, Int>>()
+
+        for ((rowIdx, row) in boardState.withIndex()) {
+            for ((columnIdx, column) in row.withIndex()) {
+                if (column == null) {
+                    emptyCellList.add(Pair(rowIdx, columnIdx))
+                }
+            }
+        }
+
+        return emptyCellList.random()
     }
 
     /**
@@ -211,7 +311,87 @@ class CoreViewModel : ViewModel() {
     fun resetBoardState() {
         _board.value = generateBoard(_boardDimensions.value!!)
         _winningCells.value = emptyList()
+        // changing `_currentPlayer`, ensuring the player is
+        // always a human (The game/round can't be initiated by AI player)
+        _currentPlayer.value?.let { curPlyr ->
+            _players.value?.let { plyrs ->
+                val currentPlyr = plyrs.find { plyr -> plyr.name == curPlyr}
+                // if current player is AI, start the next round with human player
+                if (currentPlyr != null && currentPlyr.isAI) {
+                    _currentPlayer.value = plyrs[0].name
+                }
+                else {
+                    // if current player is human, select the next player that is human
+                    // else default to the first player which is always human
+                    val nextPlyr = getNextPlayer(curPlyr)
+                    if (!nextPlyr.isAI) {
+                        _currentPlayer.value = nextPlyr.name
+                    }else {
+                        _currentPlayer.value =  plyrs[0].name
+                    }
+                }
+            }}
+//        } ?: run {
+//            _currentPlayer.value?.let {currPlyr ->
+//                if (checkDraw(_board.value!!)) {
+//                val plyr = _players.value!!.find { plyr -> plyr.name == currPlyr}
+//                    _currentPlayer.value =  _players.value!![0].name
+//                }
+//            }
+//
+//        }
         _winner.value = null
+    }
+
+    /**
+     * everything done by `resetBoardState` including, player score reset, no of rounds left reset
+     * */
+    fun extendedReset() {
+        resetBoardState()
+        //reset all players scores
+        updateAllPlayersScore(reset = true)
+        // reset the number rounds left
+        _gameMode.value.let {
+            if (it == GameModes.FREE_FOR_ALL) {
+                _noRoundsLeft.value = null
+            } else {
+                _noRoundsLeft.value = 0
+
+            }
+        }
+    }
+
+    /**
+     * Toggles the game over dialog on or off
+     */
+    fun toggleGameOverDialog(dialogVal: Boolean) {
+        _showGameOverDialog.value = dialogVal
+    }
+
+    /**
+     * Toggles the game menu dialog on or off
+     */
+    fun toggleGameMenuDialog(dialogVal: Boolean) {
+        _showGameMenuDialog.value = dialogVal
+    }
+
+    /**
+     * Display activate `showGameOverDialog, if game mode maximum rounds is reached.
+     * */
+    fun displayGameOverModal() {
+        _gameMode.value?.let {
+            when (it) {
+                GameModes.ROUND_OF_NINE -> {
+                    if (_noRoundsLeft.value == 9) toggleGameOverDialog(true)
+                }
+
+                GameModes.ROUND_OF_THREE -> {
+                    if (_noRoundsLeft.value == 3) toggleGameOverDialog(true)
+                }
+
+                GameModes.FREE_FOR_ALL -> {}
+            }
+        }
     }
 
     /**
@@ -229,7 +409,6 @@ class CoreViewModel : ViewModel() {
                 GameModes.FREE_FOR_ALL -> {}
             }
         }
-
     }
 
     /**
@@ -254,9 +433,9 @@ class CoreViewModel : ViewModel() {
     /**
      * Update the scores of all players
      * */
-    fun updateAllPlayersScore() {
+    fun updateAllPlayersScore(reset: Boolean = false) {
         _players.value = _players.value?.map {
-            it.copy(score = it.score + 1)
+            if (reset) it.copy(score = 0) else it.copy(score = it.score + 1)
         }?.toMutableList()
     }
 
@@ -373,6 +552,9 @@ class CoreViewModel : ViewModel() {
             return false;
         }
 
+        // begin each round with players having a score of zero (0)
+        updateAllPlayersScore(reset = true)
+
         // current player to the first element in the player names list
         _currentPlayer.value = plyrNames[0]
 
@@ -394,13 +576,6 @@ class CoreViewModel : ViewModel() {
 
             }
         }
-
-//        print("winConditions:   ")
-//        println(_winConditions.value)
-//        print("board:   ")
-//        println(_board.value)
-//        print("_currentPlayer:  ")
-//        println(_currentPlayer.value)
 
         return true;
     }
@@ -429,5 +604,78 @@ class CoreViewModel : ViewModel() {
         }
 
         return true
+    }
+
+    /**
+     * Checks if the corners of the board are free and selects a corner at random, to make a play in
+     */
+    private fun isCornerPlayPossible(
+        boardState: List<MutableList<String?>>,
+        size: Int
+    ): Pair<Boolean, Pair<Int, Int>?> {
+        val corners = listOf<Pair<Int, Int>>(
+            Pair(0, 0),
+            Pair(0, size - 1),
+            Pair(size - 1, 0),
+            Pair(size - 1, size - 1)
+        )
+        val freeCorners = corners.filter { boardState[it.first][it.second] == null }
+        return if (freeCorners.isEmpty()) Pair(false, null) else Pair(true, freeCorners.random())
+    }
+
+    /**
+     * Checks if the board as a middle and if its not empty to make a play in
+     */
+    private fun isMiddlePlayPossible(
+        boardState: List<MutableList<String?>>,
+        size: Int
+    ): Pair<Boolean, Pair<Int, Int>?> {
+        val midIdx = size / 2
+        // only board dimensions set with un-even numbers have a center
+        if (size % 2 != 0 && boardState[midIdx][midIdx] == null) {
+            Pair(true, Pair(midIdx, midIdx))
+        }
+        return Pair(false, null)
+    }
+
+    /**
+     * Check for a potential winning play. If the winning play is in the favour of the AI it is made (played) else it is blocked.
+     *
+     * This works by getting the state of the board (cloning it, avoid potential re-renders), making plays in empty spaces of the board and checking for a win
+     *
+     * `plyrNames` is to be reversed to start winning play checking for the AI first.
+     * initial player list order [realPlyr, realPlyr or AI], reversed order [realPlyr or AI, realPlyr]
+     * */
+    private fun isWinningPlayPossible(
+        plyrNames: MutableList<String>,
+        winCond: List<List<Pair<Int, Int>>>,
+        boardState: List<MutableList<String?>>,
+    ): Pair<Boolean, Pair<Int, Int>?> {
+        // clone of the board state
+        val newBoardState = boardState.map { it.toMutableList() }
+        // list holding index of empty cells
+        val emptyCellsList = mutableListOf<Pair<Int, Int>>()
+        // put empty cells into the list
+        newBoardState.forEachIndexed { rowIdx, row ->
+            row.forEachIndexed { columnIdx, column ->
+                if (column == null) emptyCellsList.add(
+                    Pair(rowIdx, columnIdx)
+                )
+            }
+        }
+        // win checks
+        // reversing `plyrNames` so AI prioritizes itself for win checks
+        for (plyr in plyrNames.reversed()) {
+            for (i in emptyCellsList) {
+                newBoardState[i.first][i.second] = plyr;
+                val (isWin) = checkWin(newBoardState, winCond, plyr)
+                if (isWin) {
+                    return Pair(true, i)
+                }
+                // undo changes to board state copy
+                newBoardState[i.first][i.second] = null;
+            }
+        }
+        return Pair(false, null)
     }
 }

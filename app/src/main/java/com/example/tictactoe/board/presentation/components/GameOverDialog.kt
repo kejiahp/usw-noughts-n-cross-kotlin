@@ -1,4 +1,4 @@
-package com.example.tictactoe.settings.presentation.components
+package com.example.tictactoe.board.presentation.components
 
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -16,6 +16,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 
+/**Custom Dialog wrapper component*/
 @Composable
 fun GameAlertDialog(
     onDismissRequest: () -> Unit,
@@ -46,7 +47,7 @@ fun GameAlertDialog(
         confirmButton = {
             TextButton(
                 // creating a copy of the object returned from `textButtonColors` with a custom `contentColor` value
-                colors = ButtonDefaults.textButtonColors().copy(contentColor = Color.Black),
+                colors = ButtonDefaults.textButtonColors().copy(contentColor = Color.Unspecified),
                 onClick = {
                     onConfirmation()
                 }

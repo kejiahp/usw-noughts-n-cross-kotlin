@@ -14,6 +14,9 @@ import com.example.tictactoe.core.domain.CoreViewModel
 import com.example.tictactoe.core.navigation.NavGraph
 import com.example.tictactoe.ui.theme.TictactoeTheme
 
+/**
+ * This is the main entry point of the application
+ */
 class MainActivity : ComponentActivity() {
     /**
      *Initializing the view model
