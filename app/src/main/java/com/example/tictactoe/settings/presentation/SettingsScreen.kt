@@ -37,6 +37,7 @@ import com.example.tictactoe.settings.presentation.components.TitledSettingsBloc
 @Composable
 fun SettingsScreen(navController: NavController, coreViewModel: CoreViewModel) {
     var scrollState = rememberScrollState()
+    // observe livedata and delegate values to variables,
     val players by coreViewModel.players.observeAsState(emptyList())
     val gameMode = coreViewModel.gameMode.observeAsState()
     val aiDifficulty by coreViewModel.aiDifficulty.observeAsState()

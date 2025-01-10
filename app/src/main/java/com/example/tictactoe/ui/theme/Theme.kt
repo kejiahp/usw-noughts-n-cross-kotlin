@@ -45,6 +45,8 @@ fun TictactoeTheme(
     content: @Composable () -> Unit
 ) {
     val colorScheme = when {
+        // if `dynamicColor` is true and the android version supports the use of system wallpapers (dynamicColors), then use the color scheme provided by the wallpaper.
+        // else fallback to the systems color scheme
         dynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> {
             val context = LocalContext.current
             if (darkTheme) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
@@ -59,6 +61,7 @@ fun TictactoeTheme(
     if (!view.isInEditMode) {
         SideEffect {
             val window = (view.context as Activity).window
+            // this is deprecated but I couldn't find the new syntax for changing status bar color
             window.statusBarColor = colorScheme.primary.toArgb()
             WindowCompat
                 .getInsetsController(window, view)
