@@ -197,7 +197,9 @@ class CoreViewModel : ViewModel() {
             }
         }
     }
-
+    /**
+     * Determine the position the AI will play in considering the state of the board and the AI difficulty
+     * */
     fun aiMakePlayInPosition(
         difficulty: AIDifficulty,
         boardState: List<MutableList<String?>>,
